@@ -4,6 +4,10 @@ project (http://github.com/ricochet-robotics).  As far as I
 can tell, the board has not yet been hooked up to the
 server, so it cannot yet be used for multiplayer games.
 
+To build, "sh autogen.sh". To install "make install" with
+appropriate permissions. The executable is called
+"ricochet".
+
     Bart Massey
     bart.massey@gmail.com
     2011-06-30
