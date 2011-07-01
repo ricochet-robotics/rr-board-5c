@@ -1,0 +1,128 @@
+/*
+ *  Copyright © 2007 Keith Packard <keithp@keithp.com>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License version 2 as 
+ *  published by the Free Software Foundation.
+ *
+ *  This program is distributed in the hope that it will be useful, but
+ *  WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along
+ *  with this program; if not, write to the Free Software Foundation, Inc.,
+ *  59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.
+ */
+
+autoimport Cairo;
+autoload Nichrome;
+autoload Nichrome::Button;
+import Nichrome;
+
+extend namespace Nichrome {
+
+    public namespace RRTimer {
+	import Button;
+
+	public typedef button_t + struct {
+	    bool		    running;
+	    real		    remaining;
+	    thread		    ticking;
+	    Button::callback_t	    timeout;
+	} rrtimer_t;
+
+	real	interval = .1;
+	void ticking (&rrtimer_t widget) {
+	    while (widget.running) {
+		sleep (interval * 1000);
+		if (widget.remaining > 0) {
+		    widget.remaining -= interval;
+		    Widget::redraw (&widget);
+		} else {
+		    widget.running = false;
+		    Widget::redraw (&widget);
+		    widget.timeout (&widget, true);
+		}
+	    }
+	}
+
+	public void start (&rrtimer_t widget,
+			   real interval,
+			   Button::callback_t timeout) 
+	{
+	    if (widget.running)
+		Thread::kill (widget.ticking);
+	    widget.running = true;
+	    widget.remaining = interval;
+	    widget.timeout = timeout;
+	    widget.ticking = fork ticking (&widget);
+	}
+
+	public void stop (&rrtimer_t widget) {
+	    if (widget.running) {
+		Thread::kill (widget.ticking);
+		widget.running = false;
+		Widget::redraw (&widget);
+		widget.timeout (&widget, false);
+	    }
+	}
+
+	public bool running (&rrtimer_t widget) = widget.running;
+
+	public void outline (cairo_t cr, &widget_t widget) {
+	    rectangle (cr, 0, 0,
+		       widget.geometry.width, 
+		       widget.geometry.height);
+	}
+	
+	public void natural (cairo_t cr, &widget_t widget) {
+	    rectangle (cr, 0, 0, 1, 1);
+	}
+	
+	void draw (cairo_t cr, &rrtimer_t widget) {
+	    if (widget.running)
+	    {
+		if (widget.geometry.width < .01 || widget.geometry.height < .01)
+		    return;
+		translate (cr, widget.geometry.width / 2,
+			   widget.geometry.height / 2);
+		scale (cr,
+		       widget.geometry.width * .4, 
+		       widget.geometry.height * .4);
+		real	start = -pi/2;
+		real	stop = -pi/2 + (60 - widget.remaining) / 60 * 2 * pi;
+		move_to (cr, 0, 0);
+		arc (cr, 0, 0, 1, start, stop);
+		line_to (cr, 0, 0);
+		set_source_rgba (cr, 0, 0, 0, .4);
+		fill (cr);
+	    }
+	}
+	
+	public void init (&rrtimer_t widget,
+			  &nichrome_t nichrome,
+			  string stopped,
+			  string format,
+			  Button::callback_t callback)
+	{
+	    Button::init (&widget, &nichrome, "", callback);
+	    widget.draw = draw;
+	    widget.outline = outline;
+	    widget.natural = natural;
+	    widget.running = false;
+	}
+
+	public *widget_t new (&nichrome_t nichrome,
+			      string stopped,
+			      string format,
+			      Button::callback_t callback)
+	{
+	    rrtimer_t	widget;
+	    
+	    init (&widget, &nichrome, stopped, format, callback);
+	    return &widget;
+	}
+			      
+    }
+}    

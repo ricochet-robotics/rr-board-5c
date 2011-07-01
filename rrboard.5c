@@ -1,0 +1,462 @@
+/*
+ *  Copyright © 2008 Keith Packard <keithp@keithp.com>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License version 2 as 
+ *  published by the Free Software Foundation.
+ *
+ *  This program is distributed in the hope that it will be useful, but
+ *  WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along
+ *  with this program; if not, write to the Free Software Foundation, Inc.,
+ *  59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.
+ */
+
+if (is_uninit (&ricochet_dir))
+    ricochet_dir = ".";
+
+Command::lex_file (ricochet_dir + "/rrpiece.5c");
+
+namespace RRBoard {
+
+    import RRPiece;
+
+    public int	left = 0;
+    public int	above = 1;
+    public int	right = 2;
+    public int	below = 3;
+
+    public typedef union {
+	struct {
+	    shape_t shape; color_t	color;
+	} piece;
+	void none;
+    } target_t;
+
+    public typedef struct {
+	bool[4]	walls;
+	target_t target;
+    } cell_t;
+
+    typedef cell_t[8,8]	quarter_t;
+
+    public typedef cell_t[16,16] board_t;
+
+    string[4,2] quarter_descriptions = {
+	/* First quarter */
+	{
+	    /* Side 1 */
+	    " === === === === === === === === \n" +
+	    "|... ... ... ...|... ... ... ... \n" +
+	    "                                 \n" +
+	    "|...|.rt ... ... ... ... ... ... \n" +
+	    "     ===                 ===     \n" +
+	    "|... ... ... ... ... ... .gc|... \n" +
+	    "                                 \n" +
+	    "|... ... ... ... ... ... ... ... \n" +
+	    "                                 \n" +
+	    "|... ... .bo|... ... ... ... ... \n" +
+	    "         ===                 === \n" +
+	    "|... ... ... ... ... ... ...|.ys \n" +
+	    " ===                             \n" +
+	    "|... ... ... ... ... ... ... ... \n" +
+	    "                             === \n" +
+	    "|... ... ... ... ... ... ...|... \n" +
+	    "                                 \n",
+
+	    /* Side 2 */
+	    " === === === === === === === === \n" +
+	    "|... ... ... ...|... ... ... ... \n" +
+	    "                                 \n" +
+	    "|... ... ... ... ... ... ... ... \n" +
+	    "                                 \n" +
+	    "|... ... ... ... ... .bo|... ... \n" +
+	    "                     ===         \n" +
+	    "|... ... ... ... ... ... ... ... \n" +
+	    "                                 \n" +
+	    "|... ... ... ... ... ... ... ... \n" +
+	    "         ===                     \n" +
+	    "|... ... .gc|... ... ... ...|.rt \n" +
+	    " ===                         === \n" +
+	    "|... ... ... ... ... ... ... ... \n" +
+	    "     ===                     === \n" +
+	    "|...|.ys ... ... ... ... ...|... \n" +
+	    "                                 \n"
+	},
+	/* Second quarter */
+	{
+	    /* Side 1 */
+	    " === === === === === === === === \n" +
+	    "|... ... ... ...|... ... ... ... \n" +
+	    "                                 \n" +
+	    "|... ... ... ... ... ...|.bc ... \n" +
+	    "                         ===     \n" +
+	    "|... ... ... ... ... ... ... ... \n" +
+	    "     ===                         \n" +
+	    "|... .yt|... ... ... ... ... ... \n" +
+	    "                     ===         \n" +
+	    "|... ... ... ... ...|.gs ... ... \n" +
+	    "                                 \n" +
+	    "|... ... .ro|... ... ... ... .ww|\n" +
+	    "         ===                 === \n" +
+	    "|... ... ... ... ... ... ... ... \n" +
+	    " ===                         === \n" +
+	    "|... ... ... ... ... ... ...|... \n" +
+	    "                                 \n",
+
+	    /* Side 2 */
+	    " === === === === === === === === \n" +
+	    "|... ... ... ... ...|... ... ... \n" +
+	    "                                 \n" +
+	    "|... ... .ro|... ... ... ... ... \n" +
+	    "         ===                     \n" +
+	    "|... ... ... ... ... ... ... ... \n" +
+	    "                                 \n" +
+	    "|...|.gs ... ... ... ... ... ... \n" +
+	    "     ===                 ===     \n" +
+	    "|... ... ... ... ... ...|.yt ... \n" +
+	    " ===                             \n" +
+	    "|... ... ... ... ... ... ... ... \n" +
+	    "                     ===         \n" +
+	    "|... ... ... ... ... .bc|... ... \n" +
+	    "                             === \n" +
+	    "|... ... ... .ww|... ... ...|... \n" +
+	    "             ===                 \n"
+	},
+	/* Third quarter */
+	{
+	    /* Side 1 */
+	    " === === === === === === === === \n" +
+	    "|... ... ... ... ...|... ... ... \n" +
+	    "                                 \n" +
+	    "|... ... ... ... ... ... .yo|... \n" +
+	    "     ===                 ===     \n" +
+	    "|...|.gt ... ... ... ... ... ... \n" +
+	    "                                 \n" +
+	    "|... ... ... ... ... ... ... ... \n" +
+	    "                                 \n" +
+	    "|... ... ... ... ... ... ... ... \n" +
+	    "                         ===     \n" +
+	    "|... ... ... ... ... ... .bs|... \n" +
+	    " ===                             \n" +
+	    "|... ... ...|.rc ... ... ... ... \n" +
+	    "             ===             === \n" +
+	    "|... ... ... ... ... ... ...|... \n" +
+	    "                                 \n",
+
+	    /* Side 2 */
+	    " === === === === === === === === \n" +
+	    "|... ...|... ... ... ... ... ... \n" +
+	    "                 ===             \n" +
+	    "|... ... ... ...|.rc ... ... ... \n" +
+	    "     ===                         \n" +
+	    "|... .gt|... ... ... ... ... ... \n" +
+	    "                                 \n" +
+	    "|... ... ... ... ... ... .yo|... \n" +
+	    "                         ===     \n" +
+	    "|... ... ... ... ... ... ... ... \n" +
+	    "                                 \n" +
+	    "|... ... ... ... ... ... ... ... \n" +
+	    " ===                             \n" +
+	    "|... ... ...|.bs ... ... ... ... \n" +
+	    "             ===             === \n" +
+	    "|... ... ... ... ... ... ...|... \n" +
+	    "                                 \n"
+	},
+	/* Fourth quarter */
+	{
+	    /* Side 1 */
+	    " === === === === === === === === \n" +
+	    "|... ... ... ...|... ... ... ... \n" +
+	    "                     ===         \n" +
+	    "|... ... ... ... ... .bt|... ... \n" +
+	    "                                 \n" +
+	    "|...|.rs ... ... ... ... ... ... \n" +
+	    "     ===                         \n" +
+	    "|... ... ... ... ... ... ... ... \n" +
+	    " ===                             \n" +
+	    "|... ... ... ... ... ... .yc|... \n" +
+	    "                         ===     \n" +
+	    "|... ... ... ... ... ... ... ... \n" +
+	    "                                 \n" +
+	    "|... ... .go|... ... ... ... ... \n" +
+	    "         ===                 === \n" +
+	    "|... ... ... ... ... ... ...|... \n" +
+	    "                                 \n",
+
+	    /* Side 2 */
+	    " === === === === === === === === \n" +
+	    "|... ... ... ...|... ... ... ... \n" +
+	    "                                 \n" +
+	    "|... ... ... ... ... .go|... ... \n" +
+	    "                     ===         \n" +
+	    "|...|.rs ... ... ... ... ... ... \n" +
+	    "     ===                         \n" +
+	    "|... ... ... ... ... ... ... ... \n" +
+	    " ===                     ===     \n" +
+	    "|... ... ... ... ... ...|.yc ... \n" +
+	    "                                 \n" +
+	    "|... ... ... ... ... ... ... ... \n" +
+	    "         ===                     \n" +
+	    "|... ... .bt|... ... ... ... ... \n" +
+	    "                             === \n" +
+	    "|... ... ... ... ... ... ...|... \n" +
+	    "                                 \n"
+	}
+    };
+
+    shape_t[int] shape_names = {
+	't' => shape_t.triangle,
+	's' => shape_t.square,
+	'o' => shape_t.octagon,
+	'c' => shape_t.circle,
+	'w' => shape_t.whirl
+    };
+    
+    color_t[int] color_names = {
+	'r' => color_t.red,
+	'g' => color_t.green,
+	'b' => color_t.blue,
+	'y' => color_t.yellow,
+	'w' => color_t.all,
+    };
+    
+    target_t parse_target (string name) {
+	if (name == "...")
+	    return target_t.none;
+	return (target_t) {
+	    piece = { 
+		shape = shape_names[name[2]],
+		color = color_names[name[1]]
+	    }
+	};
+    }
+
+    quarter_t parse_quarter (string description)
+    {
+	quarter_t   q = { 
+	    { 
+		{
+		    walls = { false, false, false, false },
+		    target = target_t.none
+		} ... 
+	    } ...
+	};
+
+	file f = File::string_read (description);
+
+	string getchars (file f, int n) {
+	    string onechar () {
+		int     c = File::getc (f);
+		if (c == '\n')
+		    return onechar ();
+		return String::new (c);
+	    }
+	    return n != 0 ? onechar() + getchars (f, n-1) : "";
+	}
+
+	void skip (file f) {
+	    while (File::getc (f) != '\n')
+		;
+	}
+	
+	for (int y = 0; y <= 8; y++)
+	{
+	    void load_walls () {
+		for (int x = 0; x < 8; x++)
+		{
+		    if (getchars(f,
+				 4) == " ===")
+		    {
+			if (y > 0)
+			    q[x,y-1].walls[below] = true;
+			if (y < 8)
+			    q[x,y].walls[above] = true;
+		    }
+		}
+		skip (f);
+	    }
+
+	    void load_cells () {
+		for (int x = 0; x <= 8; x++)
+		{
+		    if (File::getc
+			(f) == '|')
+		    {
+			if (x > 0)
+			    q[x-1,y].walls[right] = true;
+			if (x < 8)
+			    q[x,y].walls[left] = true;
+		    }
+		    if (x < 8)
+			q[x,y].target = parse_target (getchars(f, 3));
+		}
+		skip (f);
+	    }
+	    load_walls ();
+	    if (y < 8)
+		load_cells ();
+	}
+	return q;
+    }
+
+    public typedef struct {
+	int quarter;
+	int side;
+    }[4] layout_t;
+    
+    /* 
+     * Generate one of the 384 possible layouts
+     * This includes all four rotations
+     */
+    public layout_t generate_layout (int number) {
+	int rotation = number & 3;
+	int sides = (number >> 2) & 0xf;
+	
+	int order = (number >> 6) % 96;
+	int[4] quarters = {
+	    0, order % 3 + 1
+	};
+	
+	int[2] remaining;
+	
+	int r = 0;
+	for (int i = 1; i < 4; i++)
+	    if (i != quarters[1])
+		remaining[r++] = i;
+	int third_choice = (order // 3) % 2;
+	
+	quarters[2] = remaining[third_choice];
+	quarters[3] = remaining[1-third_choice];
+	
+	while (rotation-- > 0)
+	    quarters = (int[4]) { [i] = quarters[(i + 1) % 4] };
+
+	return (layout_t) {
+	    [i] = { quarter = quarters[i], side = (sides >> i) & 1 }
+	};
+    }
+
+    public board_t generate_board (layout_t layout) {
+
+	board_t	board = { { {
+	    walls = { false, false, false, false },
+	    target = target_t.none  } ... } ... };
+	
+	void place_cell (cell_t cell, int x, int y, int rotate) {
+	    board[x,y].target = cell.target;
+	    for (int i = 0; i < 4; i++) {
+		board[x,y].walls[(i + rotate) % 4] ||= cell.walls[i];
+	    }
+	}
+	    
+	void place_quarter (int quadrant, int quarter, int side) {
+	    
+	    int	qx = (quadrant & 1);
+	    int qy = (quadrant & 2) >> 1;
+	    int dx = (qx ^ qy) * 15;
+	    int dy = qy * 15;
+
+	    int qsin (int q) = (q & 1) - (q & 1) * (q & 2);
+	    int qcos (int q) = qsin (q + 1);
+
+	    int rx (int x, int y) = dx + (x * qcos (quadrant) - 
+				     y * qsin (quadrant));
+	    int ry (int x, int y) = dy + (x * qsin (quadrant) + 
+				     y * qcos (quadrant));
+
+	    quarter_t q = parse_quarter (quarter_descriptions[quarter,side]);
+	    for (int y = 0; y < 8; y++)
+		for (int x = 0; x < 8; x++)
+		    place_cell (q[x,y], rx(x,y), ry(x,y), quadrant);
+	}
+
+	for (int l = 0; l < 4; l++)
+	    place_quarter (l, layout[l].quarter, layout[l].side);
+
+	/* fix up walls along the middle lines */
+	for (int a = 0; a < 16; a++)
+	{
+	    board[a,7].walls[below] ||= board[a,8].walls[above];
+	    board[a,8].walls[above] ||= board[a,7].walls[below];
+	    board[7,a].walls[right] ||= board[8,a].walls[left];
+	    board[8,a].walls[left] ||= board[7,a].walls[right];
+	}
+	return board;
+    }
+
+    public void draw_board (cairo_t cr, &board_t board) {
+	pattern_t make_tile () {
+	    point_t	tile_size = user_to_device_distance (cr, (point_t) { x = 64, y = 64 });
+	    int		width = floor (tile_size.x);
+	    int		height = floor (tile_size.y);
+	    surface_t   tile_surface = Surface::create_similar (get_target (cr), 
+								content_t.COLOR,
+								width, height);
+	    cairo_t	tile_cr = create (tile_surface);
+	    
+	    matrix_t m = get_matrix (cr);
+	    m.x0 = m.y0 = 0;
+	    set_matrix (tile_cr, m);
+	    for (int y = 0; y < 2; y++)
+		for (int x = 0; x < 2; x++) {
+		    save (tile_cr);
+		    translate (tile_cr, x * 32, y * 32);
+		    RRPiece::draw_cell (tile_cr, x + y);
+		    restore (tile_cr);
+		}
+	    pattern_t pattern = Pattern::create_for_surface (tile_surface);
+	    Pattern::set_extend (pattern, Pattern::extend_t.REPEAT);
+	    Pattern::set_matrix (pattern, get_matrix (cr));
+	    return pattern;
+	}
+
+	save (cr);
+	set_source (cr, make_tile());
+/*	rectangle (cr, 0, 0, 16 * 32, 16 * 32);
+	fill (cr); */
+	paint (cr);
+	restore (cr);
+	set_source_rgb (cr, 1, 1, 1);
+	rectangle (cr, 7 * 32, 7 * 32, 64, 64);
+	fill (cr);
+	
+	set_source_rgb (cr, 0, 0, 0);
+	set_line_width (cr, 4);
+	set_line_cap (cr, line_cap_t.ROUND);
+	for (int y = 0; y < 16; y++)
+	    for (int x = 0; x < 16; x++) {
+		save (cr);
+		translate (cr, x * 32, y * 32);
+		if (board[x,y].target != target_t.none)
+		    RRPiece::draw_shape (cr,
+					 board[x,y].target.piece.shape,
+					 board[x,y].target.piece.color);
+		new_path (cr);
+		if (x != 0 && board[x,y].walls[left]) {
+		    move_to (cr, 0, 0);
+		    line_to (cr, 0, 32);
+		}
+		if (y != 0 && board[x,y].walls[above]) {
+		    move_to (cr, 0, 0);
+		    line_to (cr, 32, 0);
+		}
+		stroke (cr);
+		restore (cr);
+	    }
+	rectangle (cr, 0, 0, 16 * 32, 16 * 32);
+	stroke (cr);
+    }
+}
+
+void test (int number) {
+    RRBoard::layout_t l = RRBoard::generate_layout (number);
+    RRBoard::board_t b = RRBoard::generate_board (l);
+    real sf = 1.5;
+    cairo_t cr = new (sf * 32 * 16, sf * 32 * 16);
+    scale (cr, sf, sf);
+    RRBoard::draw_board (cr, &b);
+}

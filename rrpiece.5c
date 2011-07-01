@@ -1,0 +1,680 @@
+/*
+ *  Copyright © 2008 Keith Packard <keithp@keithp.com>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License version 2 as 
+ *  published by the Free Software Foundation.
+ *
+ *  This program is distributed in the hope that it will be useful, but
+ *  WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along
+ *  with this program; if not, write to the Free Software Foundation, Inc.,
+ *  59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.
+ */
+
+autoimport Cairo;
+
+namespace RRPiece {
+
+    public typedef enum {
+	red, green, blue, yellow, all
+    } color_t;
+
+    public typedef enum {
+	triangle, square, octagon, circle, whirl
+    } shape_t;
+
+    typedef struct {
+	string	path;
+	string	stroke;
+	string	fill;
+	real	width;
+	real	opacity;
+	real	rotate;
+	real	scale;
+	real	translate_x, translate_y;
+    } element_t;
+
+    public string[string] red_colors = {
+	"light" => "#f6d1d3",
+	"dark" => "#d0282e",
+	"shadow" => "#681417"
+    };
+    
+    public string[string] blue_colors = {
+	"light" => "#d6e4ed",
+	"dark" => "#276eb0",
+	"shadow" => "#133758"
+    };
+
+    public string[string] green_colors = {
+	"light" => "#e6f3cf",
+	"dark" => "#7fc428",
+	"shadow" => "#406214"
+    };
+
+    public string[string] yellow_colors = {
+	"light" => "#f7f7d1",
+	"dark" => "#d1c329",
+	"shadow" => "#696215"
+    };
+
+    typedef element_t[*] sprite_t;
+
+    sprite_t circle = {
+	{
+	    fill = "dark",
+	    stroke = "#A2A2A2",
+	    width = 0.5,
+	    path = "M28.5,16c0,6.904-5.596,12.5-12.5,12.5" +
+		   "C9.096,28.5,3.5,22.904,3.5,16" +
+		   "C3.5,9.096,9.096,3.5,16,3.5" +
+	           "C22.904,3.5,28.5,9.096,28.5,16z"
+	},
+	{
+	    fill = "light",
+	    stroke = "#A2A2A2",
+	    width = 0.5,
+	    path = "M24.647,11.774c0.001,0.066,0.01,0.13,0.01,0.197" +
+	           "c0,6.42-5.204,11.625-11.625,11.625" +
+		   "c-1.715,0-3.339-0.381-4.805-1.049" +
+		   "c1.818,1.878,4.36,3.049,7.18,3.049" +
+	           "c5.522,0,10-4.477,10-10" +
+		   "C25.407,14.242,25.135,12.952,24.647,11.774z"
+	},
+    };
+
+    sprite_t octagon = {
+	    { fill="#FFFFFF", stroke="#AFAFAF", width=0.5,
+		path="M9.667,26.914L3.393,16.046L9.667,5.177h12.55l6.274,10.869l-6.274,10.868H9.667z" },
+	    { fill="dark",
+		path="M10,26.364L4.06,16.074L10,5.784h11.882l5.941,10.29l-5.941,10.29H10z", },
+	    { fill="none", stroke="#959595", width=0.4,
+		path="M9.92,26.469L3.902,16.045L9.92,5.62h12.036l6.019,10.425l-6.019,10.424H9.92z" },
+	    { fill="none", stroke="#D3D3D3", width=0.3,
+		path="M9.438,27.212L2.993,16.046L9.438,4.88H22.33l6.446,11.166L22.33,27.212H9.438z" },
+	    { fill="none", stroke="#D3D3D3", width=0.15,
+		path="M10.009,26.304L4.088,16.046l5.921-10.259h11.843l5.922,10.259l-5.922,10.258H10.009z" },
+	    { opacity=0.2, fill="none", stroke="#000000", width=0.3,
+		path="M10.177,26.006L4.43,16.05l5.748-9.956h11.498l5.749,9.956l-5.749,9.956H10.177z" },
+	    { fill="light", stroke="#7A7A7A", width=0.4,
+		path="M15.965,30.451l-1.604-12.846L1.52,15.965l12.846-1.604l1.641-12.842l1.604,12.846l12.842,1.641l-12.846,1.604L15.965,30.451z" },
+	    { fill="none", stroke="#595959", width=0.1,
+		path="M15.963,28.936L14.523,17.42L3.011,15.946l11.517-1.438l1.47-11.514l1.44,11.517l11.512,1.474l-11.518,1.438L15.963,28.936z" },
+	    { fill="none", stroke="#A8A8A8", width=0.15,
+		path="M15.963,31.108L14.284,17.66L0.841,15.943l13.447-1.68l1.717-13.442l1.679,13.449l13.443,1.716l-13.447,1.68L15.963,31.108z" },
+	    { fill="none", stroke="#B5B5B5", width=0.1,
+		path="M15.96,28.527l-1.388-11.158L3.42,15.95l11.157-1.399l1.43-11.153l1.389,11.158l11.153,1.418L17.39,17.373L15.96,28.527z" },
+    };
+
+    sprite_t square = {
+	{  fill="dark", 
+	    path="M28.264,28.164H3.871V3.772h24.393V28.164z", 
+	},
+	{  opacity=0.15, fill="#FFFFFF", /* new */ 
+	    path="M28.066,3.802H3.85L15.958,15.91L28.066,3.802z", 
+	},
+	{  opacity=0.1, /* new */ 
+	    path="M3.915,3.908v24.216l12.108-12.107L3.915,3.908z", 
+	},
+	{  opacity=0.1, /* new */ 
+	    path="M28.201,27.986V3.771L16.093,15.876L28.201,27.986z",
+	},
+	{  opacity=0.15, fill="#FFFFFF", /* new */ 
+	    path="M4.02,28.091h24.217L16.128,15.984L4.02,28.091z",
+	},
+	{  opacity=0.5, fill="#515151", /* new */ 
+	    path="M24.998,15.964c0,4.918-3.986,8.906-8.906,8.906" +
+	    "c-4.918,0-8.904-3.988-8.904-8.906c0-4.918,3.986-8.905,8.904-8.905S24.998,11.046,24.998,15.964z",
+	},
+	{  fill="light", 
+	    path="M24.782,15.749c0,4.918-3.987,8.907-8.906,8.907c-4.918,0-8.905-3.988-8.905-8.907" +
+	    "c0-4.917,3.987-8.905,8.905-8.905C20.795,6.843,24.782,10.831,24.782,15.749z", 
+	},
+	{  opacity=0.5, fill="none", stroke="#666666", width=2, /* new */ 
+	    path="M17.915,17.656" +
+	    "c-5.239,5.24-10.299,8.676-11.3,7.674c-1-1,2.436-6.061,7.675-11.299c5.239-5.239,10.299-8.676,11.3-7.676" +
+	    "C26.591,7.356,23.154,12.416,17.915,17.656z", 
+	},
+	{  fill="none", stroke="#A2A2A2", width=2,
+	    path="M17.727,17.527c-5.24,5.238-10.299,8.676-11.3,7.674" +
+	    "c-1.001-1,2.437-6.061,7.675-11.301C19.341,8.661,24.4,5.224,25.402,6.226C26.402,7.228,22.967,12.287,17.727,17.527z",
+	},
+	{  fill="light",
+	    path="M17.052,6.911C12.167,6.24,7.13,10.724,6.971,15.749c-0.078,2.51,1.074,4.889,2.742,6.348L22.125,9.438" +
+	    "C20.438,7.812,18.889,7.163,17.052,6.911z", 
+	},
+    };
+    sprite_t triangle = {
+	{  fill="dark", 
+	    path="M15.683,5.233L4.703,27.225h22.003L15.683,5.233z", 
+	},
+	{ opacity=0.5, fill="none", stroke="#CCCCCC", width=0.4547,
+	    path="M15.684,5.233L4.838,27.225H26.57L15.684,5.233z",
+	},
+	{ opacity=0.5, fill="none", stroke="#999999", width=0.4706,
+	    path="M15.685,4.791L4.391,27.418h22.628L15.685,4.791z",
+	},
+	{ opacity=0.5, fill="none", stroke="#CCCCCC", width=0.5,
+	    path="M15.684,4.094l-12,24.041h24.041L15.684,4.094z",
+	},
+	{  opacity=0.5, fill="none", stroke="#999999", width=0.5,
+	    path="M15.685,4.33L3.925,27.891h23.561L15.685,4.33z", },
+	{  opacity=0.5, fill="none", stroke="#666666", width=0.25,
+	    path="M15.685,4.563L4.16,27.652H27.25L15.685,4.563z", },
+	{  opacity=0.2, fill="none", stroke="#000000", width=0.2361,
+	    path="M15.685,6.399L5.65,26.75h20.109L15.685,6.399z", },
+	{  fill="light", stroke="#A2A2A2", width=0.4,
+	    path="M15.707,10.422l1.227,3.688l1.965-1.598l0.278,2.518l3.461-1.766" +
+	    "l-1.739,3.474l2.519,0.261l-1.582,1.977l3.695,1.199L21.844,21.4l1.597,1.965l-2.518,0.279l1.767,3.461l-3.474-1.74l-0.261,2.52" +
+	    "l-1.977-1.583l-1.199,3.696l-1.227-3.688l-1.965,1.598l-0.278-2.518l-3.461,1.766l1.74-3.474l-2.519-0.261l1.583-1.977" +
+	    "l-3.696-1.199l3.687-1.227l-1.597-1.965l2.517-0.279l-1.766-3.461l3.474,1.74l0.26-2.52l1.977,1.582L15.707,10.422z", 
+	},
+	{  fill="dark", stroke="#A2A2A2", width=0.2315,
+	    path="M20.085,20.21c0,2.397-1.945,4.341-4.342,4.341" +
+	    "c-2.397,0-4.342-1.943-4.342-4.341s1.944-4.341,4.342-4.341C18.14,15.869,20.085,17.813,20.085,20.21z", 
+	},
+    };
+    
+    sprite_t whirl = {
+	{
+	    fill = blue_colors["dark"],
+	    scale = 0.75,
+	    translate_x = 21.33,
+	    translate_y = 21.33,
+	    path = ("M 0 0" + 
+		    "C 1.08021 0.246551 0.762403 1.52281 0 2" +
+		    "C -1.61026 3.00786 -3.51041 1.56445 -4 0  " +
+		    "C -4.86654 -2.76894 -2.6565 -5.44577 0 -6  " +
+		    "C 3.87403 -6.80825 7.41403 -3.74481 8 0  " +
+		    "C 8.77753 4.96904 4.83317 9.39499 0 10  " +
+		    "C -6.06102 10.7587 -11.3823 5.92184 -12 0  " +
+		    "C -12.7461 -7.15182 -7.01075 -13.3731 0 -14  " +
+		    "C 8.24206 -14.737 15.3663 -8.09982 16 0 " +
+		    "C  16 -8.832 8.832 -16 0 -16 " +
+		    "C -8.09982 -15.3663 -14.737 -8.24206 -14 0 " +
+		    "C -13.3731 7.01075 -7.15182 12.7461 0 12 " +
+		    "C 5.92184 11.3823 10.7587 6.06102 10 0 " +
+		    "C 9.39499 -4.83317 4.96904 -8.77753 0 -8 " +
+		    "C -3.74481 -7.41403 -6.80825 -3.87403 -6 0 " +
+		    "C -5.44577 2.6565 -2.76894 4.86654 0 4 " +
+		    "C 1.56445 3.51041 3.00786 1.61026 2 0 " +
+		    "C 1.52281 -0.762403 0.246551 -1.08021 0 0")
+	},
+	{
+	    fill = green_colors["dark"],
+	    rotate = 90,
+	    scale = 0.75,
+	    translate_x = 21.33,
+	    translate_y = 21.33,
+	    path = ("M 0 0" + 
+		    "C 1.08021 0.246551 0.762403 1.52281 0 2" +
+		    "C -1.61026 3.00786 -3.51041 1.56445 -4 0  " +
+		    "C -4.86654 -2.76894 -2.6565 -5.44577 0 -6  " +
+		    "C 3.87403 -6.80825 7.41403 -3.74481 8 0  " +
+		    "C 8.77753 4.96904 4.83317 9.39499 0 10  " +
+		    "C -6.06102 10.7587 -11.3823 5.92184 -12 0  " +
+		    "C -12.7461 -7.15182 -7.01075 -13.3731 0 -14  " +
+		    "C 8.24206 -14.737 15.3663 -8.09982 16 0 " +
+		    "C  16 -8.832 8.832 -16 0 -16 " +
+		    "C -8.09982 -15.3663 -14.737 -8.24206 -14 0 " +
+		    "C -13.3731 7.01075 -7.15182 12.7461 0 12 " +
+		    "C 5.92184 11.3823 10.7587 6.06102 10 0 " +
+		    "C 9.39499 -4.83317 4.96904 -8.77753 0 -8 " +
+		    "C -3.74481 -7.41403 -6.80825 -3.87403 -6 0 " +
+		    "C -5.44577 2.6565 -2.76894 4.86654 0 4 " +
+		    "C 1.56445 3.51041 3.00786 1.61026 2 0 " +
+		    "C 1.52281 -0.762403 0.246551 -1.08021 0 0")
+	},
+	{
+	    fill = red_colors["dark"],
+	    rotate = 180,
+	    scale = 0.75,
+	    translate_x = 21.33,
+	    translate_y = 21.33,
+	    path = ("M 0 0" + 
+		    "C 1.08021 0.246551 0.762403 1.52281 0 2" +
+		    "C -1.61026 3.00786 -3.51041 1.56445 -4 0  " +
+		    "C -4.86654 -2.76894 -2.6565 -5.44577 0 -6  " +
+		    "C 3.87403 -6.80825 7.41403 -3.74481 8 0  " +
+		    "C 8.77753 4.96904 4.83317 9.39499 0 10  " +
+		    "C -6.06102 10.7587 -11.3823 5.92184 -12 0  " +
+		    "C -12.7461 -7.15182 -7.01075 -13.3731 0 -14  " +
+		    "C 8.24206 -14.737 15.3663 -8.09982 16 0 " +
+		    "C  16 -8.832 8.832 -16 0 -16 " +
+		    "C -8.09982 -15.3663 -14.737 -8.24206 -14 0 " +
+		    "C -13.3731 7.01075 -7.15182 12.7461 0 12 " +
+		    "C 5.92184 11.3823 10.7587 6.06102 10 0 " +
+		    "C 9.39499 -4.83317 4.96904 -8.77753 0 -8 " +
+		    "C -3.74481 -7.41403 -6.80825 -3.87403 -6 0 " +
+		    "C -5.44577 2.6565 -2.76894 4.86654 0 4 " +
+		    "C 1.56445 3.51041 3.00786 1.61026 2 0 " +
+		    "C 1.52281 -0.762403 0.246551 -1.08021 0 0")
+	},
+	{
+	    fill = yellow_colors["dark"],
+	    rotate = 270,
+	    scale = 0.75,
+	    translate_x = 21.33,
+	    translate_y = 21.33,
+	    path = ("M 0 0" + 
+		    "C 1.08021 0.246551 0.762403 1.52281 0 2" +
+		    "C -1.61026 3.00786 -3.51041 1.56445 -4 0  " +
+		    "C -4.86654 -2.76894 -2.6565 -5.44577 0 -6  " +
+		    "C 3.87403 -6.80825 7.41403 -3.74481 8 0  " +
+		    "C 8.77753 4.96904 4.83317 9.39499 0 10  " +
+		    "C -6.06102 10.7587 -11.3823 5.92184 -12 0  " +
+		    "C -12.7461 -7.15182 -7.01075 -13.3731 0 -14  " +
+		    "C 8.24206 -14.737 15.3663 -8.09982 16 0 " +
+		    "C  16 -8.832 8.832 -16 0 -16 " +
+		    "C -8.09982 -15.3663 -14.737 -8.24206 -14 0 " +
+		    "C -13.3731 7.01075 -7.15182 12.7461 0 12 " +
+		    "C 5.92184 11.3823 10.7587 6.06102 10 0 " +
+		    "C 9.39499 -4.83317 4.96904 -8.77753 0 -8 " +
+		    "C -3.74481 -7.41403 -6.80825 -3.87403 -6 0 " +
+		    "C -5.44577 2.6565 -2.76894 4.86654 0 4 " +
+		    "C 1.56445 3.51041 3.00786 1.61026 2 0 " +
+		    "C 1.52281 -0.762403 0.246551 -1.08021 0 0")
+	},
+    };
+    
+    sprite_t cell = {
+	{ fill="#F9ECE1", path="M0,0h32v32H0V0z", },
+	{ fill="#FFFFFF", stroke="#B4B4EF", width=0.75,
+	    path="M3.981,3.928h24.042v24.041H3.981V3.928z", },
+	{ stroke="#A0A0A0", width=0.5,
+	    path="M2.945,2.785c0,0.138-0.112,0.25-0.25,0.25s-0.25-0.112-0.25-0.25" +
+	    "s0.112-0.25,0.25-0.25S2.945,2.647,2.945,2.785z", },
+	{ stroke="#A0A0A0", width=0.5,
+	    path="M29.514,2.785c0,0.138-0.111,0.25-0.25,0.25s-0.25-0.112-0.25-0.25" +
+	    "s0.111-0.25,0.25-0.25S29.514,2.647,29.514,2.785z", },
+	{ stroke="#A0A0A0", width=0.5,
+	    path="M2.945,28.924c0,0.139-0.112,0.25-0.25,0.25s-0.25-0.111-0.25-0.25" +
+	    "s0.112-0.25,0.25-0.25S2.945,28.785,2.945,28.924z", },
+	{ stroke="#A0A0A0", width=0.5,
+	    path="M29.514,28.924c0,0.139-0.111,0.25-0.25,0.25s-0.25-0.111-0.25-0.25" +
+	    "s0.111-0.25,0.25-0.25S29.514,28.785,29.514,28.924z", },
+	{ stroke="#A0A0A0", width=0.5,
+	    path="M2.513,15.896c0.072,0.072,0.072,0.188,0,0.261c-0.072,0.072-0.188,0.072-0.261,0" +
+	    "c-0.072-0.073-0.072-0.188,0-0.261C2.324,15.824,2.441,15.824,2.513,15.896z", },
+	{ stroke="#A0A0A0", width=0.5,
+	    path="M16.354,2.054c0.072,0.073,0.072,0.188,0,0.26c-0.072,0.073-0.188,0.073-0.26,0" +
+	    "c-0.073-0.072-0.073-0.188,0-0.26C16.166,1.982,16.282,1.982,16.354,2.054z", },
+	{ stroke="#A0A0A0", width=0.5,
+	    path="M16.13,29.514c0.073,0.072,0.073,0.188,0,0.261c-0.071,0.072-0.188,0.072-0.26,0" +
+	    "c-0.072-0.072-0.072-0.188,0-0.261C15.942,29.441,16.059,29.441,16.13,29.514z", },
+	{ stroke="#A0A0A0", width=0.5,
+	    path="M29.973,15.672c0.071,0.072,0.071,0.188,0,0.26c-0.072,0.072-0.188,0.072-0.261,0" +
+	    "s-0.072-0.188,0-0.26C29.784,15.6,29.9,15.6,29.973,15.672z", },
+	{ fill="#FFFFCF", path="M7.593,7.657h16.685v16.684H7.593V7.657z", },
+	{ fill="#E0E0E0", path="M7.579,7.657v5.121L12.7,7.657H7.579z", },
+	{ fill="#E0E0E0", path="M17.215,7.657l-9.636,9.636v4.752L21.967,7.657H17.215z", },
+	{ fill="#E0E0E0", path="M24.263,24.342v-5.011l-5.011,5.011H24.263z", },
+	{ fill="#E0E0E0", path="M24.263,9.876L9.797,24.342h4.94l9.525-9.525V9.876z", },
+	{ fill="none", stroke="#A0A0A0", width=0.25, path="M0.156,0.146h31.688v31.687H0.156V0.146z", },
+    };
+
+    real    number (file f) {
+	bool is_first_number (string s)
+	{
+	    return (String::index ("0123456789.-", s) >= 0);
+	}
+	bool is_rest_number (string s)
+	{
+	    return (String::index ("0123456789.", s) >= 0);
+	}
+	
+	string	n = "";
+	while (!File::end (f)) {
+	    string c = String::new (File::getc (f));
+	    if (is_first_number (c)) {
+		n = c;
+		break;
+	    }
+	}
+
+	while (!File::end (f)) {
+	    string c = String::new (File::getc (f));
+	    if (!is_rest_number (c)) {
+		File::ungetc (c[0], f);
+		break;
+	    }
+	    n = n + c;
+	}
+	return string_to_real (n);
+    }
+
+    void insert_path (cairo_t cr, string path)
+    {
+	file	f = File::string_read (path);
+	point_t	reflected_cubic;
+	bool	prev_curve = false;
+
+	void set_cubic (real x2, real y2, real x3, real y3) {
+	    reflected_cubic.x = x3 + x3 - x2;
+	    reflected_cubic.y = y3 + y3 - y2;
+	    prev_curve = true;
+	}
+	
+	set_line_join (cr, line_join_t.ROUND);
+	set_line_cap (cr, line_cap_t.ROUND);
+	while (!File::end (f)) {
+	    int	c = File::getc (f);
+	    switch (c) {
+	    case ' ':
+		break;
+	    case 'M':
+		real	x = number (f);
+		real	y = number (f);
+		move_to (cr, x, y);
+		prev_curve = false;
+		break;
+	    case 'm':
+		real	x = number (f);
+		real	y = number (f);
+		rel_move_to (cr, x, y);
+		prev_curve = false;
+		break;
+	    case 'L':
+		real	x = number (f);
+		real	y = number (f);
+		line_to (cr, x, y);
+		prev_curve = false;
+		break;
+	    case 'l':
+		real	x = number (f);
+		real	y = number (f);
+		rel_line_to (cr, x, y);
+		prev_curve = false;
+		break;
+	    case 'H':
+		real	x = number (f);
+		point_t	p = get_current_point (cr);
+		line_to (cr, x, p.y);
+		prev_curve = false;
+		break;
+	    case 'h':
+		real	x = number (f);
+		rel_line_to (cr, x, 0);
+		prev_curve = false;
+		break;
+	    case 'V':
+		real	y = number (f);
+		point_t	p = get_current_point (cr);
+		line_to (cr, p.x, y);
+		prev_curve = false;
+		break;
+	    case 'v':
+		real	y = number (f);
+		rel_line_to (cr, 0, y);
+		prev_curve = false;
+		break;
+	    case 'c':
+		point_t p = get_current_point (cr);
+		real	x1 = number (f);
+		real	y1 = number (f);
+		real	x2 = number (f);
+		real	y2 = number (f);
+		real	x3 = number (f);
+		real	y3 = number (f);
+		rel_curve_to (cr, x1, y1, x2, y2, x3, y3);
+		set_cubic (p.x + x2, p.y + y2,
+			   p.x + x3, p.y + y3);
+
+		break;
+	    case 'C':
+		real	x1 = number (f);
+		real	y1 = number (f);
+		real	x2 = number (f);
+		real	y2 = number (f);
+		real	x3 = number (f);
+		real	y3 = number (f);
+		curve_to (cr, x1, y1, x2, y2, x3, y3);
+		set_cubic (x2, y2, x3, y3);
+		break;
+	    case 's':
+		point_t	p = get_current_point (cr);
+		real	x1 = prev_curve ? reflected_cubic.x : p.x;
+		real	y1 = prev_curve ? reflected_cubic.y : p.y;
+		real	x2 = number (f) + p.x;
+		real	y2 = number (f) + p.y;
+		real	x3 = number (f) + p.x;
+		real	y3 = number (f) + p.y;
+		curve_to (cr, x1, y1, x2, y2, x3, y3);
+		set_cubic (x2, y2, x3, y3);
+		break;
+	    case 'S':
+		point_t	p = get_current_point (cr);
+		real	x1 = prev_curve ? reflected_cubic.x : p.x;
+		real	y1 = prev_curve ? reflected_cubic.y : p.y;
+		real	x2 = number (f);
+		real	y2 = number (f);
+		real	x3 = number (f);
+		real	y3 = number (f);
+		curve_to (cr, x1, y1, x2, y2, x3, y3);
+		set_cubic (x2, y2, x3, y3);
+		break;
+	    case 'z':
+		close_path (cr);
+		prev_curve = false;
+		break;
+	    default:
+		printf ("missing path type %c\n", c);
+		break;
+	    }
+	}
+    }
+
+    typedef union {
+	rgb_color_t color;
+	void	    none;
+    } pat_t;
+		
+    pat_t parse_color (string name, &string[string] colors)
+    {
+	if (name == "none")
+	    return pat_t.none;
+	if (hash_test(colors, name))
+	    name = colors[name];
+
+	int red, green, blue;
+	File::sscanf (String::substr (name, 1, 2), "%x", &red);
+	File::sscanf (String::substr (name, 3, 2), "%x", &green);
+	File::sscanf (String::substr (name, 5, 2), "%x", &blue);
+	return (pat_t) {
+	    color = {
+		red = red / 255,
+		green = green / 255,
+		blue = blue / 255
+	    }
+	};
+    }
+
+    void draw_sprite (cairo_t cr, &sprite_t sprite, &string[string] colors) {
+	for (int i = 0; i < dim (sprite); i++) {
+	    pat_t stroke_color = pat_t.none;
+	    pat_t fill_color = pat_t.none;
+
+	    save (cr);
+
+	    if (!is_uninit (&sprite[i].scale))
+		scale (cr, sprite[i].scale, sprite[i].scale);
+	    if (!is_uninit (&sprite[i].translate_x))
+		translate (cr, sprite[i].translate_x, sprite[i].translate_y);
+	    if (!is_uninit (&sprite[i].rotate))
+		rotate (cr, sprite[i].rotate * pi / 180);
+		
+	    if (!is_uninit (&sprite[i].width)) {
+		set_line_width (cr, sprite[i].width);
+		stroke_color = parse_color (sprite[i].stroke, &colors);
+	    }
+	    if (!is_uninit (&sprite[i].fill))
+		fill_color = parse_color (sprite[i].fill, &colors);
+	    insert_path (cr, sprite[i].path);
+	    real alpha = 1;
+	    if (!is_uninit (&sprite[i].opacity))
+		alpha = sprite[i].opacity;
+	    if (fill_color != pat_t.none) {
+		set_source_rgba (cr, fill_color.color.red,
+				 fill_color.color.green,
+				 fill_color.color.blue,
+				 alpha);
+		fill_preserve (cr);
+	    }
+	    if (stroke_color != pat_t.none) {
+		set_source_rgba (cr, stroke_color.color.red,
+				 stroke_color.color.green,
+				 stroke_color.color.blue,
+				 alpha);
+		stroke (cr);
+	    } else
+		new_path (cr);
+	    restore (cr);
+	}
+    }
+
+    (&sprite_t)[shape_t] shapes = {
+	shape_t.circle => &circle,
+	shape_t.octagon => &octagon,
+	shape_t.square => &square,
+	shape_t.triangle => &triangle,
+	shape_t.whirl => &whirl,
+    };
+    
+    (&string[string])[color_t] colors = {
+	color_t.red => &red_colors,
+	color_t.blue => &blue_colors,
+	color_t.green => &green_colors,
+	color_t.yellow => &yellow_colors,
+	color_t.all => &((string[string]) {}),
+    };
+    
+    public void draw_shape (cairo_t cr, shape_t shape, color_t color)
+    {
+	draw_sprite (cr, &shapes[shape], &colors[color]);
+    }
+
+    public void draw_cell (cairo_t cr, int parity)
+    {
+	save (cr);
+	if ((parity & 1) != 0) {
+	    translate (cr, 32, 0);
+	    scale (cr, -1, 1);
+	}
+	draw_sprite (cr, &cell, &((string[string]) {}));
+	restore (cr);
+    }
+
+    real radius = 12;
+    real dist = 15;
+    
+    void shadow_transform (cairo_t cr) {
+    }
+    
+    void shadow_path (cairo_t cr) {
+	translate (cr, 16, 16);
+	rotate (cr, -pi/4);
+	move_to (cr, -radius, 0);
+	line_to (cr, -radius, -dist);
+	arc (cr, 0, -dist, radius, -pi, 0);
+	line_to (cr, radius, 0);
+	arc (cr, 0, 0, radius, 0, -pi);
+    }
+    
+    public rect_t robot_shadow_bounds (cairo_t cr) {
+	save (cr);
+	shadow_path (cr);
+	restore (cr);
+	rect_t bounds = fill_extents (cr);
+	new_path (cr);
+	return bounds;
+    }
+    
+    public draw_robot_shadow (cairo_t cr, color_t color) {
+	pat_t dark = parse_color ("shadow", &colors[color]);
+	save (cr);
+	shadow_path (cr);
+	set_source_rgba (cr, dark.color.red, dark.color.green,
+			 dark.color.blue, 0.3);
+	fill (cr);
+	restore (cr);
+    }
+    
+    public rect_t robot_bounds (cairo_t cr) {
+	return (rect_t) {
+	    x = 0, y = 0, width = 32, height = 32
+	};
+    }
+    
+    public draw_robot (cairo_t cr, color_t color) {
+	pattern_t  radial = Pattern::create_radial (3, 3, 0, 0, 0, radius);
+	pat_t light = parse_color ("light", &colors[color]);
+	Pattern::add_color_stop_rgba (radial, 0, 
+				      light.color.red, light.color.green,
+				      light.color.blue, .9);
+	pat_t dark = parse_color ("dark", &colors[color]);
+	Pattern::add_color_stop_rgba (radial, 1, dark.color.red,
+				      dark.color.green, dark.color.blue,
+				      0.7);
+	
+	save (cr);
+	translate (cr, 16, 16);
+
+	set_source (cr, radial);
+	set_line_width (cr, 1);
+	arc (cr, 0, 0, radius, 0, 2 * pi);
+	fill_preserve (cr);
+	set_source_rgba (cr, .33, .33, .33, 1);
+	stroke (cr);
+	restore (cr);
+    }
+}
+
+
+void test ()
+{
+    cairo_t cr = new ();
+
+    RRPiece::shape_t[*] shapes = {
+	RRPiece::shape_t.circle,
+	RRPiece::shape_t.octagon,
+	RRPiece::shape_t.square,
+	RRPiece::shape_t.triangle
+    };
+    RRPiece::color_t[*] colors = {
+	RRPiece::color_t.red,
+	RRPiece::color_t.blue,
+	RRPiece::color_t.green,
+	RRPiece::color_t.yellow
+    };
+    
+    scale (cr, 2, 2);
+    for (int s = 0; s < dim (shapes); s++)
+	 for (int c = 0; c < dim (colors); c++) {
+	    save (cr);
+	    translate (cr, s * 32, c * 32);
+	    RRPiece::draw_cell (cr, s + c);
+	    RRPiece::draw_shape (cr, shapes[s], colors[c]);
+	    restore (cr);
+	 }
+    save (cr);
+    translate (cr, dim(shapes) * 32, 0);
+    RRPiece::draw_cell (cr, 0);
+    RRPiece::draw_shape (cr, RRPiece::shape_t.whirl, RRPiece::color_t.all);
+    restore (cr);
+    save (cr);
+    translate (cr, dim(shapes) * 32, 32);
+    RRPiece::draw_cell (cr, 0);
+    restore (cr);
+    for (int c = 0; c < dim (colors); c++) {
+	save (cr);
+	translate (cr, dim(shapes) * 32, 64 + c * 32);
+	RRPiece::draw_cell (cr, c);
+	RRPiece::draw_robot_shadow (cr, colors[c]);
+	RRPiece::draw_robot (cr, colors[c]);
+	restore (cr);
+    }
+}

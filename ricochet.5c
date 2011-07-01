@@ -1,0 +1,433 @@
+/*
+ *  Copyright © 2008 Keith Packard <keithp@keithp.com>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License version 2 as 
+ *  published by the Free Software Foundation.
+ *
+ *  This program is distributed in the hope that it will be useful, but
+ *  WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along
+ *  with this program; if not, write to the Free Software Foundation, Inc.,
+ *  59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.
+ */
+
+autoimport Cairo;
+autoload Nichrome;
+autoload Nichrome::Box;
+autoload Nichrome::Button;
+autoload Nichrome::Label;
+
+string cmd = "";
+if (!Command::valid_name ((string[*]) { "ricochet_dir" }))
+    cmd = "string ricochet_dir = \".\";\n";
+Command::lex_string (cmd);
+
+Command::lex_file(ricochet_dir + "/rrgame.5c");
+Command::lex_file(ricochet_dir + "/rrtimer.5c");
+
+extend namespace Nichrome {
+    
+    public namespace Ricochet {
+	
+	import RRGame;
+	import RRPiece;
+    
+	typedef void (&widget_t, bool) callback_t;
+
+	public typedef widget_t + container_t + struct {
+	    &game_t	game;
+	    bool	dragging;
+	    bool	keying;
+	    color_t	keyer;
+	    bool	animating;
+	    color_t	dragger;
+	    callback_t	callback;
+	    &widget_t	timer;
+	} ricochet_t;
+
+	rect_t board_geometry (&ricochet_t widget) {
+	    int	width = floor (widget.geometry.width);
+	    int height = floor (widget.geometry.height);
+	    int size = min (width, height);
+	    int	round_width = size & ~15;
+	    int	round_height = size & ~15;
+	    return (rect_t) {
+		x = (width - round_width) // 2,
+		y = (height - round_height) // 2,
+		width = round_width,
+		height = round_height
+	    };
+	}
+	
+	point_t board_pos (&ricochet_t widget, &point_t p) {
+	    rect_t	r = board_geometry (&widget);
+	    return robot_position (&widget.game, p.x - r.x, p.y - r.y);
+	}
+	
+	public void natural (cairo_t cr, &ricochet_t widget) {
+	    rectangle (cr, 0, 0, 32, 32);
+	}
+
+	public void outline (cairo_t cr, &ricochet_t widget) {
+	    rect_t	r = board_geometry (&widget);
+	    rectangle (cr, r.x, r.y, r.width, r.height);
+	}
+
+	public void draw (cairo_t cr, &ricochet_t widget) {
+	    rect_t	r = board_geometry (&widget);
+	    translate (cr, r.x, r.y);
+	    RRGame::draw_game (cr, &widget.game, r.width, r.height);
+	}
+
+	public rect_t timer_geometry (&ricochet_t widget) {
+	    rect_t  r = board_geometry (&widget);
+	    real    cell_w = r.width / 16;
+	    real    cell_h = r.height / 16;
+
+	    return (rect_t) {
+		x = r.x + cell_w * 7,
+		y = r.y + cell_h * 7,
+		width = cell_w * 2,
+		height = cell_h * 2
+	    };
+	}
+	public void configure (&ricochet_t widget, rect_t geometry) {
+	    Widget::configure (&widget, geometry);
+	    if (!is_uninit (&widget.timer)) {
+		rect_t	timer_rect = timer_geometry (&widget);
+		timer_rect.x += geometry.x;
+		timer_rect.y += geometry.y;
+		widget.timer.configure (&widget.timer, timer_rect);
+	    }
+	}
+
+	real	robot_height = 16;
+	real	robot_speed = 32; /* tiles per second */
+	real	robot_step_time = 10;	/* milliseconds */
+	
+	public void animate (&ricochet_t widget, color_t color,
+			     point_t start, point_t end, bool drop) 
+	{
+	    rect_t  r = board_geometry (&widget);
+	    real    tiles_dx = end.x - start.x;
+	    real    tiles_dy = end.y - start.y;
+	    real    tiles_dist = sqrt (tiles_dx ** 2 + tiles_dy ** 2);
+#	    if (tiles_dist <= 0) return;
+	    real    tiles_per_step = robot_speed * robot_step_time / 1000;
+	    int	    steps = ceil (tiles_dist / tiles_per_step);
+	    if (steps <= 0) steps = 1;
+	    tiles_per_step = tiles_dist / steps;
+	    real    step_x = tiles_dx * tiles_per_step / tiles_dist;
+	    real    step_y = tiles_dy * tiles_per_step / tiles_dist;
+
+	    for (int s = 1; s <= steps; s++)
+	    {
+		if (robot_location (&widget.game, color) != end)
+		    break;
+		if (!widget.animating)
+		    break;
+		drag_robot (&widget.game, color, 
+			    start.x + step_x * s,
+			    start.y + step_y * s,
+			    robot_height);
+		Widget::redraw (&widget);
+		sleep (robot_step_time);
+	    }
+	    if (robot_location (&widget.game, color) == end)
+	    {
+		drag_robot (&widget.game, color, end.x, end.y, drop ? 0 :
+		robot_height);
+		Widget::redraw (&widget);
+	    }
+	}
+
+	public void button (&ricochet_t widget, &button_event_t event) {
+	    point_t pos = board_pos (&widget, &event);
+	    enum switch (event.type) {
+	    case press:
+		color_t	hit = RRGame::hit (&widget.game, pos.x, pos.y);
+		if (hit != color_t.all) {
+		    widget.dragging = true;
+		    widget.dragger = hit;
+		    widget.animating = false;
+		    RRGame::drag_robot (&widget.game, widget.dragger,
+					pos.x, pos.y, robot_height);
+		    Widget::redraw (&widget);
+		}
+		break;
+	    case release:
+		if (widget.dragging) {
+		    widget.dragging = false;
+		    if (event.button != 1) {
+			RRGame::drop_robot (&widget.game, widget.dragger,
+					    pos.x, pos.y);
+			Widget::redraw (&widget);
+			widget.callback (&widget, true);
+		    } else {
+			push_t	push = push_robot (&widget.game,
+						   widget.dragger,
+						   pos.x, pos.y);
+			union switch (push) {
+			case move new:
+			    widget.animating = true;
+			    set_robot_location (&widget.game,
+						widget.dragger,
+						new.x, new.y);
+			    widget.callback (&widget, true);
+			    fork animate (&widget, widget.dragger,
+					  pos, new, true);
+			    break;
+			case no_move:
+			    reset_robot (&widget.game, widget.dragger);
+			    break;
+			}
+			Widget::redraw (&widget);
+		    }
+		}
+		break;
+	    default:
+		break;
+	    }
+	}
+
+	public void key (&ricochet_t widget, &key_event_t key) {
+	    if (key.type != key_type_t.press)
+		return;
+
+	    color_t[string] key_to_color = {
+		"r" => color_t.red,
+		"g" => color_t.green,
+		"b" => color_t.blue,
+		"y" => color_t.yellow
+	    };
+
+	    direction_t[string] key_to_direction = {
+		"Left" => direction_t.left,
+		"Up" => direction_t.up,
+		"Right" => direction_t.right,
+		"Down" => direction_t.down,
+	    };
+	    switch (key.key) {
+	    case "u":
+	    case "BackSpace":
+		if (undo (&widget.game)) {
+		    widget.callback (&widget, true);
+		    Widget::redraw (&widget);
+		}
+		break;
+	    case "n":
+		RRTimer::stop (&widget.timer);
+		next_target (&widget.game);
+		widget.callback (&widget, true);
+		Widget::redraw (&widget);
+		break;
+	    case "q":
+		RRTimer::stop (&widget.timer);
+		widget.nichrome.running = false;
+		break;
+	    case "space":
+		if (widget.keying) {
+		    widget.keying = false;
+		    point_t pos = robot_location (&widget.game, widget.keyer);
+		    drag_robot (&widget.game, widget.keyer, pos.x, pos.y, 0);
+		    Widget::redraw (&widget);
+		}
+		break;
+	    case "r":
+	    case "g":
+	    case "b":
+	    case "y":
+		color_t color = key_to_color [key.key];
+		if (widget.keying && color != widget.keyer) {
+		    point_t pos = robot_location (&widget.game, widget.keyer);
+		    drag_robot (&widget.game, widget.keyer, pos.x, pos.y, 0);
+		}
+		widget.animating = false;
+		widget.keying = true;
+		widget.keyer = color;
+		point_t pos = robot_location (&widget.game, widget.keyer);
+		drag_robot (&widget.game, color, pos.x, pos.y, robot_height);
+		Widget::redraw (&widget);
+		break;
+	    case "Left":
+	    case "Up":
+	    case "Right":
+	    case "Down":
+		if (!widget.keying)
+		    break;
+		direction_t direction = key_to_direction [key.key];
+		point_t cur = robot_location (&widget.game, widget.keyer);
+		point_t new = move_robot (&widget.game, widget.keyer,
+					  direction);
+		if (new != cur) {
+		    widget.animating = true;
+		    set_robot_location (&widget.game, widget.keyer,
+					new.x, new.y);
+		    widget.callback (&widget, true);
+		    fork animate (&widget, widget.keyer,
+				  cur, new, false);
+		}
+		break;
+	    default:
+		break;
+	    }
+	}
+	
+	public void motion (&ricochet_t widget, &motion_event_t event) {
+	    if (widget.dragging) {
+		point_t pos = board_pos (&widget, &event);
+		RRGame::drag_robot (&widget.game, widget.dragger,
+				    pos.x, pos.y, robot_height);
+		Widget::redraw (&widget);
+	    }
+	}
+	
+	public void resize (&ricochet_t widget, &contained_t item)
+	{
+	}
+
+	public *widget_t new (&nichrome_t nichrome,
+			      &game_t game,
+			      &widget_t timer,
+			      callback_t callback) {
+	    ricochet_t	widget;
+
+	    Widget::init (&nichrome, &widget);
+	    &widget.game = &game;
+	    widget.draw = draw;
+	    widget.outline = outline;
+	    widget.natural = natural;
+	    widget.button = button;
+	    widget.motion = motion;
+	    widget.configure = configure;
+	    widget.key = key;
+	    widget.dragging = false;
+	    widget.keying = false;
+	    widget.callback = callback;
+	    &widget.timer = &timer;
+	    &widget.timer.container = &widget;
+	    widget.resize = resize;
+	    return &widget;
+	}
+    }
+}
+
+import Nichrome;
+import Ricochet;
+import RRGame;
+
+if (dim(argv) >= 2)
+{
+    srandom (atoi (argv[1]));
+}
+else
+{
+    dev_srandom (32);
+}
+
+real cell_size = 40;
+
+void config_button (&Nichrome::Button::button_t button)
+{
+    button.color = (rgba_color_t) { red = 0.81, green = 0.16, blue = 0.18, alpha = 0.7 };
+#    button.text_color = (rgba_color_t) { red = 0.15, green = 0.43, blue = 0.69, alpha = 1 };
+    button.text_color = (rgba_color_t) { red = 0.075, green = 0.216,
+	blue = 0.345, alpha = 1 };
+}
+
+void config_label (&Nichrome::Label::label_t lab)
+{
+    lab.color = (rgba_color_t) { red = 0.075, green = 0.216,
+	blue = 0.345, alpha = 1 };
+}
+
+void play () {
+    Widget::default_font = "bauhaus std,Cooper std,sans-20";
+    &nichrome_t	nichrome = Nichrome::new ("Ricochet Robots",
+					  16 * cell_size,
+					  16 * cell_size + 46);
+    &game_t	game = create_game ();
+
+    &widget_t	nmoves = Label::new (&nichrome, "Moves: 0");
+    
+    void set_nmoves () {
+	Label::relabel (&nmoves, sprintf ("Moves: %d", RRGame::nmoves (&game)));
+    }
+					    
+    void timer_expire (&widget_t widget, bool state) {
+    }
+
+    void timer_start (&widget_t widget, bool state) {
+	if (RRTimer::running (&widget))
+	    RRTimer::stop (&widget);
+	else
+	    RRTimer::start (&widget, 60, timer_expire);
+    }
+    
+    &widget_t	timer= RRTimer::new (&nichrome, "Timer",
+					    "Remaining: %g",
+					    timer_start);
+
+    &widget_t	quit = Button::new (&nichrome, "Quit",
+					    void func (&widget_t w, bool state) {
+						RRTimer::stop (&timer);
+						w.nichrome.running = false;
+					    });
+    &widget_t	new = Button::new (&nichrome, "New Game",
+					   void func (&widget_t widget, bool state) {
+					    RRTimer::stop (&timer);
+					    RRGame::new_game (&game);
+					    set_nmoves ();
+					   });
+					    
+    &widget_t	next= Button::new (&nichrome, "Next Target",
+					   void func (&widget_t widget, bool state) {
+					    RRTimer::stop (&timer);
+					    RRGame::next_target (&game);
+					    set_nmoves ();
+					   });
+    &widget_t	undo= Button::new (&nichrome, "Undo",
+					   void func (&widget_t widget, bool state) {
+					    RRGame::undo (&game);
+					    set_nmoves ();
+					   });
+    &widget_t	reset= Button::new (&nichrome, "Reset",
+					   void func (&widget_t widget, bool state) {
+					    RRGame::reset (&game);
+					    set_nmoves ();
+					   });
+    config_button (&quit);
+    config_button (&new);
+    config_button (&next);
+    config_button (&undo);
+    config_button (&reset);
+    config_label (&nmoves);
+    void ricochet_callback (&widget_t widget, bool state) {
+	set_nmoves ();
+    }
+    &ricochet_t	ricochet = Ricochet::new (&nichrome, &game, &timer, ricochet_callback);
+    
+    &container_t    menu = Box::new (Box::dir_t.horizontal,
+				     Box::widget_item (&new, 0),
+				     Box::widget_item (&next, 0),
+				     Box::widget_item (&undo, 0),
+				     Box::widget_item (&reset, 0),
+				     Box::widget_item (&quit, 0),
+				     Box::glue_item (1),
+				     Box::widget_item (&nmoves, 0));
+
+    &container_t    vbox = Box::new (Box::dir_t.vertical,
+				     Box::box_item (&menu),
+				     Box::widget_item (&ricochet, 1));
+    set_box (&nichrome, &vbox);
+    top (&nichrome, &ricochet);
+    top (&nichrome, &timer);
+    set_key_focus (&nichrome, &ricochet);
+    main_loop (&nichrome);
+}
+
+play ();

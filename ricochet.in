@@ -1,0 +1,6 @@
+#!/usr/bin/env nickle
+string ricochet_dir = "@RICOCHET_LIBDIR@";
+
+Command::nickle_path = ricochet_dir + ":" + Command::nickle_path;
+
+Command::lex_file(ricochet_dir + "/ricochet.5c");

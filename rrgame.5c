@@ -1,0 +1,527 @@
+/*
+ *  Copyright © 2007 Keith Packard <keithp@keithp.com>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License version 2 as 
+ *  published by the Free Software Foundation.
+ *
+ *  This program is distributed in the hope that it will be useful, but
+ *  WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along
+ *  with this program; if not, write to the Free Software Foundation, Inc.,
+ *  59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.
+ */
+
+autoimport PRNG;
+
+if (is_uninit (&ricochet_dir))
+    ricochet_dir = ".";
+
+Command::lex_file(ricochet_dir + "/rrboard.5c");
+
+namespace RRGame {
+
+    import RRPiece;
+    import RRBoard;
+
+    public typedef struct {
+	shape_t	shape;
+	color_t	color;
+    } piece_t;
+
+    typedef struct {
+	point_t			location;
+	point_t			draw;
+	real			height;
+    } robot_t;
+
+    typedef union {
+	struct {
+	    color_t		color;
+	    point_t		location;
+	} move;
+	piece_t			draw;
+    } action_t;
+    
+    public typedef struct {
+	surface_t		shadow;
+	point_t			shadow_pos;
+	surface_t		robot;
+    } robot_image_t;
+
+    public typedef struct {
+	RRBoard::board_t	board;
+	robot_t[color_t]	robots;
+	piece_t[...]		deck;
+	surface_t		board_surface;
+	real			board_width, board_height;
+	bool			board_cached;
+	surface_t		target_surface;
+	bool			target_cached;
+	&piece_t		target_piece;
+	robot_image_t[color_t]	robot_images;
+	action_t[...]		history;
+    } game_t;
+    
+    public typedef enum {
+	left, up, right, down
+    } direction_t;
+
+    public color_t[*] colors = {
+	color_t.red, color_t.green, color_t.blue, color_t.yellow
+    };
+
+    public shape_t[*] shapes = {
+	shape_t.circle, shape_t.octagon, shape_t.square, shape_t.triangle
+    };
+    
+    void destroy_target_surface (&game_t game) {
+	if (game.target_cached) {
+	    Surface::destroy (game.target_surface);
+	    game.target_cached = false;
+	}
+    }
+    
+    void paint_sprite (cairo_t cr, surface_t sprite, real x, real y) {
+	point_t loc = user_to_device (cr, (point_t) { x = x, y = y });
+	save (cr);
+	identity_matrix (cr);
+	set_source_surface (cr, sprite, loc.x, loc.y);
+	paint (cr);
+	restore (cr);
+    }
+
+    void draw_target (cairo_t cr, &game_t game, &piece_t target)
+    {
+	if (game.target_cached && &target != &game.target_piece)
+	    destroy_target_surface (&game);
+	if (!game.target_cached) {
+	    point_t size = user_to_device_distance (cr, (point_t) {
+		x = 64, y = 64 });
+	    point_t bigger = user_to_device_distance (cr, (point_t) {
+		x = 1, y = 1 });
+	    game.target_surface = Surface::create_similar (get_target (cr),
+							   content_t.COLOR_ALPHA,
+							   ceil (size.x),
+							   ceil (size.y));
+	    cairo_t target_cr = create (game.target_surface);
+	    scale (target_cr, bigger.x, bigger.y);
+	    scale (target_cr, 2, 2);
+	    draw_shape (target_cr, target.shape, target.color);
+	    destroy (target_cr);
+	    game.target_cached = true;
+	    &game.target_piece = &target;
+	}
+	save (cr);
+	translate (cr, 7 * 32, 7 * 32);
+	paint_sprite (cr, game.target_surface, 0, 0);
+	restore (cr);
+    }
+    
+    void draw_robots (cairo_t cr, &game_t game, real width, real height) {
+	&(robot_t[color_t]) robots = &game.robots;
+	
+	for (int r = 0; r < dim (colors); r++) {
+	    color_t	color = colors[r];
+	    &robot_t    robot = &robots[color];
+	    &robot_image_t  image = &game.robot_images[color];
+	    save (cr);
+	    scale (cr, width / (16 * 32), height / (16 * 32));
+	    translate (cr,
+		       32 * robot.draw.x + image.shadow_pos.x - robot.height,
+		       32 * robot.draw.y + image.shadow_pos.y - robot.height);
+	    paint_sprite (cr, game.robot_images[color].shadow, 0, 0);
+	    restore (cr);
+	}
+	for (int r = 0; r < dim (colors); r++) {
+	    color_t color = colors[r];
+	    &robot_t    robot = &robots[color];
+	    save (cr);
+	    scale (cr, width / (16 * 32), height / (16 * 32));
+	    translate (cr, 32 * robot.draw.x, 32 * robot.draw.y);
+	    paint_sprite (cr, game.robot_images[color].robot, 0, 0);
+	    restore (cr);
+	}
+    }
+	
+    void destroy_surface (&game_t game) {
+	if (game.board_cached) {
+	    Surface::destroy (game.board_surface);
+	    for (int c = 0; c < dim (colors); c++) {
+		color_t color = colors[c];
+		Surface::destroy (game.robot_images[color].shadow);
+		Surface::destroy (game.robot_images[color].robot);
+	    }
+	    game.board_cached = false;
+	}
+	destroy_target_surface (&game);
+    }
+    
+    void check_surface (&game_t game, surface_t target, int width, int height) {
+	if (!game.board_cached ||
+	    game.board_width != width || game.board_height != height)
+	{
+	    destroy_surface (&game);
+	    game.board_surface = Surface::create_similar (target,
+							  content_t.COLOR_ALPHA,
+							  width, height);
+	    game.board_cached = true;
+	    game.board_width = width;
+	    game.board_height = height;
+	    cairo_t cr = create (game.board_surface);
+	    if (width > 0 && height > 0)
+		scale (cr, width / (16 * 32), height / (16 * 32));
+	    draw_board (cr, &game.board);
+	    
+	    game.robot_images = (robot_image_t[color_t]) {};
+
+	    int robot_width = width // 16;
+	    int robot_height = height // 16;
+
+	    rect_t  robot_rect = RRPiece::robot_bounds (cr);
+	    rect_t  shadow_rect = RRPiece::robot_shadow_bounds (cr);
+
+	    point_t robot_size = user_to_device_distance (cr, (point_t) {
+		x = robot_rect.width,
+		y = robot_rect.height });
+	    
+	    point_t shadow_size = user_to_device_distance (cr, (point_t) {
+		x = shadow_rect.width,
+		y = shadow_rect.height });
+	    
+	    for (int c = 0; c < dim (colors); c++)
+	    {
+		color_t color = colors[c];
+		game.robot_images[color] = (robot_image_t) {
+		    shadow = Surface::create_similar (target,
+						      content_t.COLOR_ALPHA,
+						      ceil (shadow_size.x),
+						      ceil (shadow_size.y)),
+		    robot = Surface::create_similar (target,
+						     content_t.COLOR_ALPHA,
+						     ceil (robot_size.x),
+						     ceil (robot_size.y))
+		};
+		&robot_image_t	image = &game.robot_images[color];
+
+		cairo_t cr = create (image.shadow);
+		scale (cr, width / (16 * 32), height / (16 * 32));
+		translate (cr, -shadow_rect.x, -shadow_rect.y);
+		draw_robot_shadow (cr, color);
+
+		cairo_t cr = create (image.robot);
+		scale (cr, width / (16 * 32), height / (16 * 32));
+		draw_robot (cr, color);
+
+		image.shadow_pos = (point_t) {
+		    x = shadow_rect.x,
+		    y = shadow_rect.y 
+		};
+	    }
+	}
+    }
+
+    public void draw_game (cairo_t cr, &game_t game, real width, real height)
+    {
+	width = floor (width);
+	height = floor (height);
+	if (width <= 0 || height <= 0)
+	    return;
+    
+	disable (cr);
+	save (cr);
+	check_surface (&game, get_target (cr), width, height);
+	set_source_surface (cr, game.board_surface, 0, 0);
+	rectangle (cr, 0, 0, width, height);
+	fill (cr);
+	
+	save (cr);
+	scale (cr, width / (16 * 32), height / (16 * 32));
+	
+	if (dim (game.deck) > 0)
+	    draw_target (cr, &game, &game.deck[dim(game.deck) - 1]);
+	restore (cr);
+	    
+	draw_robots (cr, &game, width, height);
+	restore (cr);
+	enable (cr);
+	if (status (cr) != status_t.SUCCESS)
+	    printf ("failure %g\n", status (cr));
+    }
+
+    point_t rand_point () {
+	return (point_t) { x = PRNG::randint (16), y = PRNG::randint(16) };
+    }
+
+    void remember (&game_t game, action_t action) {
+	game.history[dim(game.history)] = action;
+    }
+
+    public bool undo (&game_t game) {
+	if (dim (game.history) == 0)
+	    return false;
+	union switch (game.history[dim(game.history)-1]) {
+	case move m:
+	    &robot_t	robot = &game.robots[m.color];
+	    robot.draw = robot.location = m.location;
+	    robot.height = 0;
+	    break;
+	case draw piece:
+	    game.deck[dim(game.deck)] = piece;
+	    break;
+	}
+	setdim (game.history, dim (game.history) - 1);
+	return true;
+    }
+    
+    public void reset (&game_t game) {
+	while (dim (game.history) > 0)
+	    union switch (game.history[dim(game.history)-1]) {
+	    case move:
+		undo (&game);
+		break;
+	    case draw:
+		return;
+	    }
+    }
+
+    public int nmoves (&game_t game) {
+	int nmoves = 0;
+	for (int i = dim(game.history) - 1; i >= 0; i--) {
+	    union switch (game.history[i]) {
+	    case move:
+		++nmoves;
+		break;
+	    case draw:
+		return nmoves;
+	    }
+	}
+	return nmoves;
+    }
+    
+    public bool next_target (&game_t game) {
+	if (dim (game.deck) == 0)
+	    return false;
+	destroy_surface (&game);
+	remember (&game,
+		  (action_t) { draw = game.deck[dim(game.deck) - 1] });
+	setdim (game.deck, dim(game.deck) - 1);
+	return true;
+    }
+
+    public void new_game (&game_t game) {
+	destroy_surface (&game);
+
+	int number = PRNG::randint (384);
+	game.board = RRBoard::generate_board (RRBoard::generate_layout (number));
+
+	game.history = (action_t[...]) {};
+	bool point_ok (point_t point, int set_colors) {
+	    if (7 <= point.x && point.x <= 8 &&
+		7 <= point.y && point.y <= 8)
+		return false;
+	    for (int i = 0; i < set_colors; i++)
+		if (game.robots[colors[i]].location == point)
+		    return false;
+	    return true;
+	}
+	
+	for (int i = 0; i < dim (colors); i++) {
+	    point_t   p;
+	    do {
+		p = rand_point ();
+	    } while (!point_ok (p, i));
+	    game.robots[colors[i]] = (robot_t) { location = p, draw = p, height = 0 };
+	}
+	game.deck = (piece_t[...]) {};
+	for (int s = 0; s < dim (shapes); s++)
+	    for (int c = 0; c < dim (colors); c++) {
+		game.deck[dim(game.deck)] = (piece_t) {
+		    shape = shapes[s],
+		    color = colors[c]
+		};
+	    }
+	game.deck[dim(game.deck)] = (piece_t) {
+	    shape = shape_t.whirl,
+	    color = color_t.all 
+	};
+	PRNG::shuffle (&game.deck);
+    }
+    
+    public *game_t create_game () {
+	game_t	game;
+
+	game.board_cached = false;
+	game.target_cached = false;
+	new_game (&game);
+	
+	return &game;
+    }
+
+    public point_t move_robot (&game_t game, color_t color, direction_t direction) {
+	&robot_t    robot = &game.robots[color];
+	int dx = 0;
+	int dy = 0;
+	int edge;
+	bool has_robot (int x, int y) {
+	    if (x < 0) return true;
+	    if (y < 0) return true;
+	    if (x >= 16) return true;
+	    if (y >= 16) return true;
+	    for (int r = 0; r < dim (colors); r++) {
+		point_t	loc = game.robots[colors[r]].location;
+		if (loc.x == x && loc.y == y)
+		    return true;
+	    }
+	    return false;
+	}
+
+	enum switch (direction) {
+	case left: dx = -1; edge = RRBoard::left; break;
+	case right: dx = 1; edge = RRBoard::right; break;
+	case up: dy = -1; edge = RRBoard::above; break;
+	case down: dy = 1; edge = RRBoard::below; break;
+	}
+	point_t	point = robot.location;
+	while (!game.board[point.x,point.y].walls[edge] &&
+	       !has_robot (point.x + dx, point.y + dy)) 
+	{
+	    point.x += dx;
+	    point.y += dy;
+	}
+	
+	return point;
+    }
+
+    public point_t robot_position (&game_t game, real x, real y) {
+	matrix_t    m = Matrix::identity ();
+	
+	real bound (real r) {
+	    if (r < -0.5) r = -0.5;
+	    if (r >= 15.5) r = 15.49;
+	    return r;
+	}
+    	m = Matrix::translate (m, -0.5, -0.5);
+	m = Matrix::scale (m,
+			   16 / game.board_width,
+			   16 / game.board_height);
+	point_t	p = Matrix::point (m, (point_t) { x = x, y = y });
+	p.x = bound (p.x);
+	p.y = bound (p.y);
+	return p;
+    }
+
+    public point_t board_position (&game_t game, real x, real y) {
+	matrix_t    m = Matrix::identity ();
+	
+	real bound (real r) {
+	    if (r < -0.5) r = -0.5;
+	    if (r >= 15.5) r = 15.49;
+	    return r;
+	}
+	x = bound (x);
+	y = bound (y);
+	m = Matrix::scale (m,
+			   game.board_width / 16,
+			   game.board_height / 16);
+    	m = Matrix::translate (m, 0.5, 0.5);
+	point_t	p = Matrix::point (m, (point_t) { x = x, y = y });
+	return p;
+    }
+
+    public void drag_robot (&game_t game, color_t color, real x, real y, real z)
+    {
+	point_t draw = { x = x, y = y };
+	game.robots[color].draw = draw;
+	game.robots[color].height = z;
+    }
+
+    public color_t hit (&game_t game, real x, real y) {
+	point_t	location = { x = floor (x + 0.5), y = floor (y + 0.5) };
+	for (int r = 0; r < dim (colors); r++) {
+	    color_t color = colors[r];
+	    if (game.robots[color].location == location)
+		return color;
+	}
+	return color_t.all;
+    }
+
+    public void set_robot_location (&game_t game, color_t color, real x, real y) {
+	&robot_t    robot = &game.robots[color];
+
+	remember (&game,
+		  (action_t) { 
+		    move = { color = color,
+		    location = robot.location
+		    } } );
+
+	robot.location.x = floor (x + 0.5);
+	robot.location.y = floor (y + 0.5);
+    }
+
+    public void drop_robot (&game_t game, color_t color, real x, real y) {
+	&robot_t    robot = &game.robots[color];
+
+	set_robot_location (&game, color, x, y);
+	robot.draw = robot.location;
+	robot.height = 0;
+    }
+
+    public void reset_robot (&game_t game, color_t color) {
+	&robot_t    robot = &game.robots[color];
+
+	robot.draw = robot.location;
+	robot.height = 0;
+    }
+
+    public typedef union {
+	point_t	move;
+	void	no_move;
+    } push_t;
+
+    public push_t push_robot (&game_t game, color_t color, real x, real y) {
+	&robot_t    robot = &game.robots[color];
+	point_t	    location = { x = x, y = y };
+	real	    dx = location.x - robot.location.x;
+	real	    dy = location.y - robot.location.y;
+	direction_t direction;
+
+	if (abs (dx) >= 0.5 && abs (dx) > abs (dy) * 2) {
+	    if (dx > 0)
+		direction = direction_t.right;
+	    else
+		direction = direction_t.left;
+	} else if (abs (dy) >= 0.5 && abs (dy) > abs (dx) * 2) {
+	    if (dy > 0)
+		direction = direction_t.down;
+	    else
+		direction = direction_t.up;
+	} else
+	    return push_t.no_move;
+	point_t	new = move_robot (&game, color, direction);
+	if (new == robot.location)
+	    return push_t.no_move;
+	return (push_t) { move = new };
+    }
+
+    public point_t robot_location (&game_t game, color_t color) {
+	return game.robots[color].location;
+    }
+    public point_t robot_draw (&game_t game, color_t color) {
+	return game.robots[color].draw;
+    }
+}
+
+void test ()
+{
+    &RRGame::game_t game = RRGame::create_game ();
+
+    cairo_t cr = new (16 * 32, 16 * 32);
+    RRGame::draw_game (cr, &game, 16 * 32, 16 * 32);
+    sleep (1000);
+    RRGame::move_robot (&game, RRPiece::color_t.red, RRGame::direction_t.up);
+    RRGame::draw_game (cr, &game, 16 * 32, 16 * 32);
+}
